@@ -490,9 +490,10 @@ function appendSafeRichText(target, html = "") {
   });
 }
 
-// Priorizar webp para probar conversiones ligeras, con fallback a formatos existentes
-const MULTI_IMAGE_EXTENSIONS = ["webp", "jpeg", "jpg", "png"];
-const SINGLE_IMAGE_EXTENSIONS = ["webp", "png", "jpg", "jpeg"];
+// Las imágenes en /galeria están en jpeg; webp se intenta sólo después
+// para no generar un 404 por carpeta en cada visita.
+const MULTI_IMAGE_EXTENSIONS = ["jpeg", "jpg", "webp", "png"];
+const SINGLE_IMAGE_EXTENSIONS = ["png", "jpeg", "jpg", "webp"];
 const imageExtensionCache = new Map();
 
 function getImageCacheKey(folder, device, qty) {
@@ -567,6 +568,7 @@ function setImageSrcWithFallback(imgEl, folder, device, idx, qty, onLoad) {
 
 function crearGaleria(webs, lang = "ES") {
   const contenedor = document.getElementById("galeriaWebs");
+  if (!contenedor) return;
   contenedor.textContent = "";
   webs.forEach((web) => {
     const article = document.createElement("article");
@@ -1024,6 +1026,7 @@ function updateFullscreenImage() {
   if (!modal) return;
 
   const img = modal.querySelector('.fullscreen-img');
+  if (!img) return;
   const { folder, device, currentIndex, qty } = fullscreenState;
 
   img.style.opacity = '0';
@@ -1039,6 +1042,7 @@ function updateFullscreenIndicators() {
   if (!modal) return;
 
   const indicators = modal.querySelector('.fullscreen-indicators');
+  if (!indicators) return;
   const { qty, currentIndex } = fullscreenState;
 
   indicators.innerHTML = '';
@@ -1059,45 +1063,57 @@ let currentLangIndex = 0; // ES por defecto
 function applyLanguage(lang) {
   const c = document.querySelector(".container");
   const h = document.querySelector(".pre-header-cloud");
-  if (c && h) {
-    c.style.transition = h.style.transition = "opacity 250ms";
-    c.style.opacity = h.style.opacity = "0.35";
-  }
-  resetSlides();
-  const t = textosMain[lang];
-  // Actualiza <html lang> y <title> según el idioma activo
-  document.documentElement.setAttribute(
-    "lang",
-    lang === "ES" ? "es" : lang === "EN" ? "en" : lang === "FR" ? "fr" : "ca"
-  );
-
-  const titles = {
-    ES: "beca de digitalización meowrhino",
-    EN: "meowrhino digitization grant",
-    FR: "bourse de numérisation meowrhino",
-    CAT: "beca de digitalització meowrhino",
+  const restoreOpacity = () => {
+    if (c) c.style.opacity = "1";
+    if (h) h.style.opacity = "1";
   };
-
-  document.title = titles[lang] || titles.ES;
-  document.querySelector("#whyTitle").textContent = t.whyTitle;
-  document.querySelector("#whyP1").textContent = t.whyP1;
-  document.querySelector("#whyP2").textContent = t.whyP2;
-  const ctaBtn = document.querySelector(".cta-button");
-  if (ctaBtn) {
-    ctaBtn.textContent = t.ctaText;
-    ctaBtn.href = `mailto:hola@meowrhino.studio?subject=${encodeURIComponent(
-      t.ctaSubject || t.ctaText
-    )}`;
-  }
-  crearGaleria(websRealizadas, lang);
-  setupSlides();
-  const btn = document.querySelector("#toggleLang");
-  if (btn) btn.textContent = lang;
-  requestAnimationFrame(() => {
+  try {
     if (c && h) {
-      c.style.opacity = h.style.opacity = "1";
+      c.style.transition = h.style.transition = "opacity 250ms";
+      c.style.opacity = h.style.opacity = "0.35";
     }
-  });
+    resetSlides();
+    const t = textosMain[lang] || textosMain.ES;
+    // Actualiza <html lang> y <title> según el idioma activo
+    document.documentElement.setAttribute(
+      "lang",
+      lang === "ES" ? "es" : lang === "EN" ? "en" : lang === "FR" ? "fr" : "ca"
+    );
+
+    const titles = {
+      ES: "beca de digitalización meowrhino",
+      EN: "meowrhino digitization grant",
+      FR: "bourse de numérisation meowrhino",
+      CAT: "beca de digitalització meowrhino",
+    };
+
+    document.title = titles[lang] || titles.ES;
+    const whyTitle = document.querySelector("#whyTitle");
+    const whyP1 = document.querySelector("#whyP1");
+    const whyP2 = document.querySelector("#whyP2");
+    if (whyTitle) whyTitle.textContent = t.whyTitle;
+    if (whyP1) whyP1.textContent = t.whyP1;
+    if (whyP2) whyP2.textContent = t.whyP2;
+    const ctaBtn = document.querySelector(".cta-button");
+    if (ctaBtn) {
+      ctaBtn.textContent = t.ctaText;
+      ctaBtn.href = `mailto:hola@meowrhino.studio?subject=${encodeURIComponent(
+        t.ctaSubject || t.ctaText
+      )}`;
+    }
+    crearGaleria(websRealizadas, lang);
+    setupSlides();
+    const btn = document.querySelector("#toggleLang");
+    if (btn) btn.textContent = lang;
+  } catch (err) {
+    console.error("⚠️ applyLanguage falló, restaurando UI", err);
+  } finally {
+    // Garantiza que la opacidad vuelve a 1 incluso si algo lanza.
+    // rAF para mantener la transición visual; setTimeout como red de seguridad
+    // (rAF puede no dispararse si la pestaña pasa a background, etc.).
+    requestAnimationFrame(restoreOpacity);
+    setTimeout(restoreOpacity, 300);
+  }
 }
 
 const getInitialLang = () => {
@@ -1117,11 +1133,13 @@ document.addEventListener("DOMContentLoaded", () => {
   currentLangIndex = LANGS.indexOf(initial);
   applyLanguage(initial);
   const langBtn = document.querySelector("#toggleLang");
-  langBtn.addEventListener("click", () => {
-    currentLangIndex = (currentLangIndex + 1) % LANGS.length;
-    const lang = LANGS[currentLangIndex];
-    localStorage.setItem("lang", lang);
-    setLangInURL(lang);
-    applyLanguage(lang);
-  });
+  if (langBtn) {
+    langBtn.addEventListener("click", () => {
+      currentLangIndex = (currentLangIndex + 1) % LANGS.length;
+      const lang = LANGS[currentLangIndex];
+      localStorage.setItem("lang", lang);
+      setLangInURL(lang);
+      applyLanguage(lang);
+    });
+  }
 });
